@@ -53,9 +53,8 @@ poetry run mypy src/
 
 ## Phase Status
 - [x] Phase 0 — Scaffold
-- [ ] Phase 1 — Kalshi client, NWS client, DB migrations
-  - [x] NWS client (nws_client.py + 29 tests)
-- [ ] Phase 2 — Historical data backfill
-- [ ] Phase 3 — ML training + calibration
-- [ ] Phase 4 — Execution loop + risk layer
+- [x] Phase 1 — Kalshi client, NWS client, DB migrations
+- [x] Phase 2 — Historical data backfill + feature engineering
+- [x] Phase 3 — ML training + calibration (XGBoost/LightGBM + isotonic calibration)
+- [x] Phase 4 — Execution loop + risk layer (10-min poll, signal → risk → order)
 - [ ] Phase 5 — Monitoring (Prometheus + Grafana)

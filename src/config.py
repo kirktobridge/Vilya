@@ -35,6 +35,10 @@ class Settings(BaseSettings):
 
   # Kalshi API
   kalshi_base_url: str = Field(default="https://trading-api.kalshi.com/trade-api/v2")
+  kalshi_series_ticker: str = Field(default="KXHIGHNY")
+
+  # Model artifacts
+  model_dir: str = Field(default="models", description="Directory containing model.pkl + calibrator.pkl")
 
   # Weather API
   nws_base_url: str = Field(default="https://api.weather.gov")
