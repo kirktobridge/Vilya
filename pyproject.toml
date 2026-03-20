@@ -1,0 +1,63 @@
+[tool.poetry]
+name = "kalshi-weather-bot"
+version = "0.1.0"
+description = "Kalshi weather market trading bot"
+authors = ["Isaac"]
+readme = "README.md"
+packages = [{ include = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+requests = "^2.31"
+pydantic = "^2.7"
+pydantic-settings = "^2.2"
+sqlalchemy = "^2.0"
+alembic = "^1.13"
+xgboost = "^2.0"
+lightgbm = "^4.3"
+scikit-learn = "^1.4"
+structlog = "^24.1"
+prometheus-client = "^0.20"
+numpy = "^1.26"
+pandas = "^2.2"
+python-dotenv = "^1.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.1"
+pytest-asyncio = "^0.23"
+pytest-cov = "^5.0"
+respx = "^0.21"
+responses = "^0.25"
+ruff = "^0.4"
+black = "^24.4"
+mypy = "^1.10"
+types-requests = "^2.31"
+
+[tool.poetry.scripts]
+bot = "src.execution.loop:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+exclude = ["tests/", "db/"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=src --cov-report=term-missing -q"
