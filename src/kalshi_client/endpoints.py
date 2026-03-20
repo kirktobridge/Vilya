@@ -1,22 +1,31 @@
 """Typed endpoint wrappers for the Kalshi REST API."""
-# Phase 1: implement full bodies
 from src.kalshi_client.client import KalshiClient
-from src.kalshi_client.models import Market, Order, OrderBook, Portfolio
+from src.kalshi_client.models import Market, Order, OrderBook, Portfolio, Position
 
 
 def get_markets(client: KalshiClient, series_ticker: str) -> list[Market]:
-  """Return open markets for a given series ticker."""
-  raise NotImplementedError
+  """Return all open markets for a series (e.g. KXHIGHNY)."""
+  data = client.get("/markets", params={"series_ticker": series_ticker, "status": "open"})
+  return [Market.model_validate(m) for m in data.get("markets", [])]
 
 
 def get_orderbook(client: KalshiClient, ticker: str) -> OrderBook:
-  """Return current order book for a market."""
-  raise NotImplementedError
+  """Return current YES/NO order book for a market."""
+  data = client.get(f"/markets/{ticker}/orderbook")
+  ob = data.get("orderbook", {})
+  return OrderBook(
+    ticker=ticker,
+    yes=[(int(p), int(s)) for p, s in ob.get("yes", [])],
+    no=[(int(p), int(s)) for p, s in ob.get("no", [])],
+  )
 
 
 def get_portfolio(client: KalshiClient) -> Portfolio:
-  """Return current balance and positions."""
-  raise NotImplementedError
+  """Return current balance and open positions (two API calls)."""
+  balance_data = client.get("/portfolio/balance")
+  positions_data = client.get("/portfolio/positions")
+  positions = [Position.model_validate(p) for p in positions_data.get("positions", [])]
+  return Portfolio(balance=balance_data.get("balance", 0), positions=positions)
 
 
 def place_order(
@@ -26,15 +35,26 @@ def place_order(
   count: int,
   price: int,
 ) -> Order:
-  """Submit a limit order. Returns the created Order."""
-  raise NotImplementedError
+  """Submit a limit buy order. price is in cents (0-100)."""
+  payload: dict[str, object] = {
+    "ticker": ticker,
+    "side": side,
+    "type": "limit",
+    "action": "buy",
+    "count": count,
+    "yes_price": price if side == "yes" else 100 - price,
+    "no_price": price if side == "no" else 100 - price,
+  }
+  data = client.post("/orders", json=payload)
+  return Order.model_validate(data["order"])
 
 
 def cancel_order(client: KalshiClient, order_id: str) -> None:
   """Cancel an open order by ID."""
-  raise NotImplementedError
+  client.delete(f"/orders/{order_id}")
 
 
 def get_open_orders(client: KalshiClient) -> list[Order]:
-  """Return all open orders."""
-  raise NotImplementedError
+  """Return all resting (open) orders."""
+  data = client.get("/orders", params={"status": "resting"})
+  return [Order.model_validate(o) for o in data.get("orders", [])]

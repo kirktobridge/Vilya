@@ -12,6 +12,11 @@ Monorepo. All source code lives in `src/`. Tests in `tests/`. DB migrations in `
 - Functions ≤ 50 lines; one responsibility per function
 - All API keys via `.env` — never hardcode secrets
 
+## Environment Setup (Windows)
+- Python 3.12 installed via python.org installer ✓
+- Poetry installed via `pip install poetry` (if `poetry` not on PATH, use `python -m poetry`)
+- Docker Desktop required for Postgres
+
 ## Running Locally
 ```bash
 cp .env.example .env          # fill in real keys
@@ -49,6 +54,7 @@ poetry run mypy src/
 ## Phase Status
 - [x] Phase 0 — Scaffold
 - [ ] Phase 1 — Kalshi client, NWS client, DB migrations
+  - [x] NWS client (nws_client.py + 29 tests)
 - [ ] Phase 2 — Historical data backfill
 - [ ] Phase 3 — ML training + calibration
 - [ ] Phase 4 — Execution loop + risk layer

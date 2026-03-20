@@ -25,8 +25,10 @@ def compute_signal(
   edge_sell = market_implied - (1 - model_prob) -> buy NO if > threshold
   """
   market_implied = yes_price_cents / 100.0
-  edge_buy = model_prob - market_implied
-  edge_sell = market_implied - (1.0 - model_prob)
+  # Round to 10dp to avoid float artifacts (e.g. 0.53-0.50 = 0.030000...027)
+  edge_buy = round(model_prob - market_implied, 10)
+  # NO edge = P(NO) - NO_price = (1-model_prob) - (1-market_implied) = market_implied - model_prob
+  edge_sell = round(market_implied - model_prob, 10)
 
   if edge_buy > ev_threshold:
     action = "buy_yes"

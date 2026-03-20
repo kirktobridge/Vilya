@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(poetry run:*)",
+      "Bash(python -m pytest tests/test_nws_client.py tests/test_signal.py tests/test_risk.py tests/test_kalshi_client.py -v)"
+    ]
+  }
+}
