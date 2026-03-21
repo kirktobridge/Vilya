@@ -14,7 +14,7 @@ from src.monitoring.logger import get_logger
 
 log = get_logger(__name__)
 
-_NON_FEATURE_COLS = {"ticker", "valid_date", "yes_settlement"}
+_NON_FEATURE_COLS = {"ticker", "title", "valid_date", "yes_settlement"}
 _MIN_ROWS = 20
 
 
@@ -79,17 +79,33 @@ def train(
 # ---------------------------------------------------------------------------
 
 def _add_derived_features(df: pd.DataFrame) -> pd.DataFrame:
-  """Add threshold_f from ticker and deviation features from climatology/threshold."""
+  """Add threshold_f, direction, and deviation features from ticker/title."""
   df = df.copy()
   df["threshold_f"] = df["ticker"].apply(_parse_threshold_f)
+  df["is_bucket_market"] = df["ticker"].astype(str).str.contains(
+    r"-B\d", regex=True
+  ).astype(float)
+
+  if "title" in df.columns:
+    df["is_above_threshold"] = df["title"].apply(_parse_market_direction)
+  else:
+    df["is_above_threshold"] = float("nan")
 
   for src in ("nws", "ow"):
     for lead in ("t24", "t12", "t6", "t3"):
       col = f"{src}_{lead}_forecast_high_f"
       if col not in df.columns:
         continue
+      dev = df[col] - df["threshold_f"]
       df[f"{src}_{lead}_clim_dev"] = df[col] - df["clim_mean_high"]
-      df[f"{src}_{lead}_threshold_dev"] = df[col] - df["threshold_f"]
+      df[f"{src}_{lead}_threshold_dev"] = dev
+      # Signed: positive = more likely YES regardless of market direction.
+      # NaN for bucket markets (direction undefined).
+      df[f"{src}_{lead}_threshold_dev_signed"] = np.where(
+        df["is_above_threshold"].isna(),
+        float("nan"),
+        dev * (2 * df["is_above_threshold"].fillna(0) - 1),
+      )
 
   return df
 
@@ -98,12 +114,24 @@ def _parse_threshold_f(ticker: str) -> float:
   """Extract temperature threshold from a Kalshi ticker string.
 
   Handles patterns like:
-    KXHIGHNY-24JUN24-87   -> 87.0
-    KXHIGHNY-24JUN24-87.5 -> 87.5
+    KXHIGHNY-24JUN24-87    -> 87.0   (plain)
+    KXHIGHNY-24JUN24-T90   -> 90.0   (T-prefix above/below)
+    KXHIGHNY-24JUN24-B83.5 -> 83.5   (B-prefix bucket lower bound)
   Returns NaN if not parseable.
   """
-  match = re.search(r"-T?(\d+(?:\.\d+)?)$", str(ticker))
+  match = re.search(r"-[TB]?(\d+(?:\.\d+)?)$", str(ticker))
   return float(match.group(1)) if match else float("nan")
+
+
+def _parse_market_direction(title: object) -> float:
+  """Return 1.0 (above threshold), 0.0 (below threshold), or NaN (bucket/unknown)."""
+  if not isinstance(title, str) or not title:
+    return float("nan")
+  if ">" in title:
+    return 1.0
+  if "<" in title:
+    return 0.0
+  return float("nan")
 
 
 def _build_classifier(model_type: str, kwargs: dict[str, Any]) -> Any:

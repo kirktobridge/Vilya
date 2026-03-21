@@ -1,4 +1,6 @@
 """ETL pipeline: join DB tables into a training-ready CSV."""
+import math
+import re
 from datetime import date, timedelta
 from typing import Any
 
@@ -57,24 +59,84 @@ def build_live_feature_row(
   location: str = "NYC_CENTRAL_PARK",
 ) -> dict[str, float] | None:
   """
-  Pull the latest forecast snapshot from the DB and return a live feature dict.
-  Used by the execution loop to feed the model at inference time.
+  Build a live feature dict whose keys match the training CSV schema.
+
+  Fetches the latest NWS and OW snapshots for valid_date, populates every
+  lead-time variant (t24/t12/t6/t3) with the same current values, and
+  computes threshold/direction features from the ticker and market title.
   """
   engine = get_engine()
-  forecasts = _load_forecasts(engine, location)
-  if forecasts.empty:
+  _nan = float("nan")
+
+  with engine.connect() as conn:
+    title_row = conn.execute(
+      text("SELECT title FROM kalshi_markets WHERE ticker = :t"),
+      {"t": ticker},
+    ).fetchone()
+    title = str(title_row[0]) if title_row and title_row[0] else ""
+
+    fc_rows = conn.execute(
+      text("""
+        SELECT DISTINCT ON (source)
+          source, forecast_high_f, forecast_low_f, precip_prob, humidity_pct
+        FROM weather_forecasts
+        WHERE location = :loc AND valid_date = :dt
+        ORDER BY source, fetched_at DESC
+      """),
+      {"loc": location, "dt": valid_date},
+    ).fetchall()
+
+  if not fc_rows:
     return None
 
-  target_date_str = valid_date.isoformat()
-  day_forecasts = forecasts[forecasts["valid_date"] == target_date_str]
-  if day_forecasts.empty:
-    return None
+  by_src: dict[str, dict[str, float]] = {}
+  for r in fc_rows:
+    src, high, low, precip, humidity = r
+    by_src[src] = {
+      "forecast_high_f": float(high) if high is not None else _nan,
+      "forecast_low_f": float(low) if low is not None else _nan,
+      "precip_prob": float(precip) if precip is not None else _nan,
+      "humidity_pct": float(humidity) if humidity is not None else _nan,
+    }
 
-  latest = day_forecasts.sort_values("fetched_at").iloc[-1]
-  features = _row_to_feature_dict(latest, suffix="latest")
-  seasonal = build_seasonal_features(valid_date)
-  clim_mean, clim_std = compute_climatology(location, valid_date.month, valid_date.day)
-  return {**features, **seasonal, "clim_mean_high": clim_mean, "clim_std_high": clim_std}
+  row: dict[str, float] = {}
+  for lead in ("t24", "t12", "t6", "t3"):
+    for feat_src, db_src in (("nws", "nws"), ("ow", "openweather")):
+      vals = by_src.get(db_src, {})
+      prefix = f"{feat_src}_{lead}"
+      for col in ("forecast_high_f", "forecast_low_f", "precip_prob", "humidity_pct"):
+        row[f"{prefix}_{col}"] = vals.get(col, _nan)
+
+  d = valid_date if isinstance(valid_date, date) else date.fromisoformat(str(valid_date))
+  seasonal = build_seasonal_features(d)
+  clim_mean, clim_std = compute_climatology(location, d.month, d.day)
+  row.update(seasonal)
+  row["clim_mean_high"] = clim_mean
+  row["clim_std_high"] = clim_std
+
+  # Threshold features (mirrors train._add_derived_features for a single row)
+  t_match = re.search(r"-[TB]?(\d+(?:\.\d+)?)$", str(ticker))
+  threshold_f = float(t_match.group(1)) if t_match else _nan
+  row["threshold_f"] = threshold_f
+
+  is_above = 1.0 if ">" in title else (0.0 if "<" in title else _nan)
+  row["is_above_threshold"] = is_above
+  row["is_bucket_market"] = 1.0 if re.search(r"-B\d", str(ticker)) else 0.0
+
+  for lead in ("t24", "t12", "t6", "t3"):
+    for src in ("nws", "ow"):
+      high = row.get(f"{src}_{lead}_forecast_high_f", _nan)
+      if math.isnan(high):
+        continue
+      dev = high - threshold_f if not math.isnan(threshold_f) else _nan
+      row[f"{src}_{lead}_clim_dev"] = high - clim_mean
+      row[f"{src}_{lead}_threshold_dev"] = dev
+      if not math.isnan(dev) and not math.isnan(is_above):
+        row[f"{src}_{lead}_threshold_dev_signed"] = dev * (2 * is_above - 1)
+      else:
+        row[f"{src}_{lead}_threshold_dev_signed"] = _nan
+
+  return row
 
 
 # ---------------------------------------------------------------------------
@@ -148,9 +210,3 @@ def _build_row(
   return row
 
 
-def _row_to_feature_dict(row: "pd.Series[Any]", suffix: str) -> dict[str, float]:
-  return {
-    f"nws_{suffix}_high_f": float(row.get("forecast_high_f") or float("nan")),
-    f"nws_{suffix}_low_f": float(row.get("forecast_low_f") or float("nan")),
-    f"nws_{suffix}_precip_prob": float(row.get("precip_prob") or 0.0),
-  }

@@ -44,7 +44,7 @@ def build_coldstart_dataset(
 
   markets = pd.read_sql(
     text("""
-      SELECT ticker, close_time::date AS valid_date, yes_settlement
+      SELECT ticker, title, close_time::date AS valid_date, yes_settlement
       FROM kalshi_markets
       WHERE series_ticker = :series AND yes_settlement IS NOT NULL
       ORDER BY close_time
@@ -86,6 +86,7 @@ def build_coldstart_dataset(
 
     row: dict = {
       "ticker": m["ticker"],
+      "title": m["title"],
       "valid_date": m["valid_date"],
       "yes_settlement": int(m["yes_settlement"]),
     }

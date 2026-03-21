@@ -12,7 +12,7 @@ from sklearn.isotonic import IsotonicRegression
 
 from src.models.calibrate import fit_isotonic, load_calibrator, save_calibrator
 from src.models.predict import ModelBundle, load_model, predict_prob
-from src.models.train import _parse_threshold_f, train
+from src.models.train import _parse_market_direction, _parse_threshold_f, train
 
 
 # ---------------------------------------------------------------------------
@@ -228,6 +228,33 @@ class TestParseThresholdF:
   def test_t_prefix_decimal_threshold(self) -> None:
     assert _parse_threshold_f("KXHIGHNY-24JUN12-T87.5") == pytest.approx(87.5)
 
+  def test_b_prefix_bucket_lower_bound(self) -> None:
+    assert _parse_threshold_f("KXHIGHNY-24JUN12-B83.5") == pytest.approx(83.5)
+
+  def test_b_prefix_integer(self) -> None:
+    assert _parse_threshold_f("KXHIGHNY-24JUN12-B80") == pytest.approx(80.0)
+
+
+# ---------------------------------------------------------------------------
+# train — _parse_market_direction
+# ---------------------------------------------------------------------------
+
+class TestParseMarketDirection:
+  def test_above_market_returns_one(self) -> None:
+    assert _parse_market_direction("Will the high temp be >85°F on Jun 12?") == pytest.approx(1.0)
+
+  def test_below_market_returns_zero(self) -> None:
+    assert _parse_market_direction("Will the high temp be <73°F on May 31?") == pytest.approx(0.0)
+
+  def test_bucket_market_returns_nan(self) -> None:
+    assert math.isnan(_parse_market_direction("Will the high temp be 83-84°F?"))
+
+  def test_empty_string_returns_nan(self) -> None:
+    assert math.isnan(_parse_market_direction(""))
+
+  def test_non_string_returns_nan(self) -> None:
+    assert math.isnan(_parse_market_direction(None))
+
 
 # ---------------------------------------------------------------------------
 # train — full pipeline
@@ -334,3 +361,26 @@ class TestTrain:
     train(csv, out, _classifier_kwargs={"n_estimators": 5})
     bundle = load_model(out / "model.pkl", out / "calibrator.pkl")
     assert any("threshold_dev" in f for f in bundle.feature_names)
+
+  def test_is_bucket_market_feature_added(self, tmp_path: Path) -> None:
+    csv = _write_csv(_make_training_df(30), tmp_path)
+    out = tmp_path / "models"
+    train(csv, out, _classifier_kwargs={"n_estimators": 5})
+    bundle = load_model(out / "model.pkl", out / "calibrator.pkl")
+    assert "is_bucket_market" in bundle.feature_names
+
+  def test_is_above_threshold_feature_added(self, tmp_path: Path) -> None:
+    csv = _write_csv(_make_training_df(30), tmp_path)
+    out = tmp_path / "models"
+    train(csv, out, _classifier_kwargs={"n_estimators": 5})
+    bundle = load_model(out / "model.pkl", out / "calibrator.pkl")
+    assert "is_above_threshold" in bundle.feature_names
+
+  def test_threshold_dev_signed_added_when_title_present(self, tmp_path: Path) -> None:
+    df = _make_training_df(30)
+    df["title"] = "Will the high temp be >85°F?"
+    csv = _write_csv(df, tmp_path)
+    out = tmp_path / "models"
+    train(csv, out, _classifier_kwargs={"n_estimators": 5})
+    bundle = load_model(out / "model.pkl", out / "calibrator.pkl")
+    assert any("threshold_dev_signed" in f for f in bundle.feature_names)
