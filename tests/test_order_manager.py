@@ -7,7 +7,7 @@ import responses as resp_lib
 from src.execution.order_manager import OrderManager, TrackedOrder, _PRICE_DRIFT_CENTS, _PROB_DRIFT_THRESHOLD
 from src.kalshi_client.client import KalshiClient
 
-KALSHI_BASE = "https://trading-api.kalshi.com/trade-api/v2"
+KALSHI_BASE = "https://api.elections.kalshi.com/trade-api/v2"
 TICKER = "KXHIGHNY-24JUN12-T90"
 
 MOCK_ORDER_RESPONSE = {
@@ -60,21 +60,21 @@ class TestPlaceLimitOrderPaper:
 class TestPlaceLimitOrderLive:
   @resp_lib.activate
   def test_live_calls_api(self) -> None:
-    resp_lib.add(resp_lib.POST, f"{KALSHI_BASE}/orders", json=MOCK_ORDER_RESPONSE)
+    resp_lib.add(resp_lib.POST, f"{KALSHI_BASE}/portfolio/orders", json=MOCK_ORDER_RESPONSE)
     mgr = _make_manager(paper=False)
     order_id = mgr.place_limit_order(TICKER, "yes", 1, 42, 0.55)
     assert order_id == "ord-abc123"
 
   @resp_lib.activate
   def test_live_tracks_order_in_open(self) -> None:
-    resp_lib.add(resp_lib.POST, f"{KALSHI_BASE}/orders", json=MOCK_ORDER_RESPONSE)
+    resp_lib.add(resp_lib.POST, f"{KALSHI_BASE}/portfolio/orders", json=MOCK_ORDER_RESPONSE)
     mgr = _make_manager(paper=False)
     mgr.place_limit_order(TICKER, "yes", 1, 42, 0.55)
     assert "ord-abc123" in mgr._open
 
   @resp_lib.activate
   def test_tracked_order_stores_price_and_prob(self) -> None:
-    resp_lib.add(resp_lib.POST, f"{KALSHI_BASE}/orders", json=MOCK_ORDER_RESPONSE)
+    resp_lib.add(resp_lib.POST, f"{KALSHI_BASE}/portfolio/orders", json=MOCK_ORDER_RESPONSE)
     mgr = _make_manager(paper=False)
     mgr.place_limit_order(TICKER, "yes", 1, 42, 0.55)
     tracked = mgr._open["ord-abc123"]
@@ -121,12 +121,12 @@ class TestCancelStaleOrders:
 
   @resp_lib.activate
   def test_live_calls_cancel_endpoint(self) -> None:
-    resp_lib.add(resp_lib.DELETE, f"{KALSHI_BASE}/orders/ord-1", status=200)
+    resp_lib.add(resp_lib.DELETE, f"{KALSHI_BASE}/portfolio/orders/ord-1", status=200)
     mgr = _make_manager(paper=False)
     _inject_tracked(mgr, "ord-1", TICKER, price=42, prob=0.55)
     mgr.cancel_stale_orders(TICKER, 99, 0.99)
     assert len(resp_lib.calls) == 1
-    assert "/orders/ord-1" in resp_lib.calls[0].request.url
+    assert "/portfolio/orders/ord-1" in resp_lib.calls[0].request.url
 
   def test_exact_price_drift_boundary_not_cancelled(self) -> None:
     mgr = _make_manager(paper=True)
@@ -160,8 +160,8 @@ class TestCancelAll:
 
   @resp_lib.activate
   def test_live_cancel_all_calls_api_for_each(self) -> None:
-    resp_lib.add(resp_lib.DELETE, f"{KALSHI_BASE}/orders/ord-1", status=200)
-    resp_lib.add(resp_lib.DELETE, f"{KALSHI_BASE}/orders/ord-2", status=200)
+    resp_lib.add(resp_lib.DELETE, f"{KALSHI_BASE}/portfolio/orders/ord-1", status=200)
+    resp_lib.add(resp_lib.DELETE, f"{KALSHI_BASE}/portfolio/orders/ord-2", status=200)
     mgr = _make_manager(paper=False)
     _inject_tracked(mgr, "ord-1", TICKER, 42, 0.55)
     _inject_tracked(mgr, "ord-2", "OTHER-99", 50, 0.60)

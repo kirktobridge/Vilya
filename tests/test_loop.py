@@ -24,17 +24,16 @@ def _make_market(
 ) -> Market:
   if close_time is None:
     close_time = datetime(2099, 6, 12, 20, 0, tzinfo=timezone.utc)
-  return Market(
-    ticker=ticker,
-    series_ticker="KXHIGHNY",
-    event_ticker="KXHIGHNY-24JUN12",
-    yes_bid=yes_bid,
-    yes_ask=yes_ask,
-    last_price=42,
-    volume=500,
-    status="open",
-    close_time=close_time,
-  )
+  return Market.model_validate({
+    "ticker": ticker,
+    "event_ticker": "KXHIGHNY-24JUN12",
+    "yes_bid": yes_bid,
+    "yes_ask": yes_ask,
+    "last_price": 42,
+    "volume": 500,
+    "status": "open",
+    "close_time": close_time,
+  })
 
 
 def _make_portfolio(balance: int = 100_00, positions: list[Position] | None = None) -> Portfolio:

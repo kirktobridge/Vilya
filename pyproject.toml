@@ -9,9 +9,11 @@ packages = [{ include = "src" }]
 [tool.poetry.dependencies]
 python = "^3.12"
 requests = "^2.31"
+cryptography = "^42.0"
 pydantic = "^2.7"
 pydantic-settings = "^2.2"
 sqlalchemy = "^2.0"
+psycopg2-binary = "^2.9"
 alembic = "^1.13"
 xgboost = "^2.0"
 lightgbm = "^4.3"

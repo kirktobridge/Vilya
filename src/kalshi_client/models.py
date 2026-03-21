@@ -1,21 +1,73 @@
 """Pydantic v2 models for Kalshi API responses."""
 from datetime import datetime
-from typing import Optional
+from decimal import Decimal
+from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+
+def _dollars_to_cents(val: object) -> int:
+  """Convert a dollar string like '0.4200' to integer cents (42)."""
+  if val is None or val == "":
+    return 0
+  return int(round(Decimal(str(val)) * 100))
 
 
 class Market(BaseModel):
   ticker: str
-  series_ticker: str
-  event_ticker: str
+  event_ticker: str = ""
   title: Optional[str] = None
-  yes_bid: int = 0
-  yes_ask: int = 0
-  last_price: int = 0
-  volume: int = 0
+  # New API: dollar string fields (e.g. "0.4400")
+  yes_bid_dollars: Optional[str] = None
+  yes_ask_dollars: Optional[str] = None
+  last_price_dollars: Optional[str] = None
+  volume_fp: Optional[str] = None
   status: str = "open"
   close_time: Optional[datetime] = None
+  # Settlement result ("yes" | "no" | None)
+  result: Optional[str] = None
+
+  @model_validator(mode="before")
+  @classmethod
+  def _accept_legacy_cents(cls, data: Any) -> Any:
+    """Convert legacy integer-cent fields to dollar strings for backward compat."""
+    if not isinstance(data, dict):
+      return data
+    data = dict(data)  # don't mutate caller's dict
+    for old_field, new_field in (
+      ("yes_bid", "yes_bid_dollars"),
+      ("yes_ask", "yes_ask_dollars"),
+      ("last_price", "last_price_dollars"),
+    ):
+      if old_field in data and new_field not in data:
+        cents = data.pop(old_field)
+        data[new_field] = f"{int(cents) / 100:.4f}" if cents else None
+    if "volume" in data and "volume_fp" not in data:
+      data["volume_fp"] = str(data.pop("volume"))
+    # series_ticker only appears at the event level in new API; discard silently
+    data.pop("series_ticker", None)
+    return data
+
+  @property
+  def yes_bid(self) -> int:
+    return _dollars_to_cents(self.yes_bid_dollars)
+
+  @property
+  def yes_ask(self) -> int:
+    return _dollars_to_cents(self.yes_ask_dollars)
+
+  @property
+  def last_price(self) -> int:
+    return _dollars_to_cents(self.last_price_dollars)
+
+  @property
+  def volume(self) -> int:
+    if self.volume_fp is None:
+      return 0
+    try:
+      return int(self.volume_fp)
+    except (ValueError, TypeError):
+      return 0
 
   @property
   def yes_price(self) -> int:
@@ -23,6 +75,14 @@ class Market(BaseModel):
     if self.yes_bid and self.yes_ask:
       return (self.yes_bid + self.yes_ask) // 2
     return self.last_price
+
+  @property
+  def yes_settlement(self) -> Optional[bool]:
+    if self.result == "yes":
+      return True
+    if self.result == "no":
+      return False
+    return None
 
 
 class OrderBook(BaseModel):
@@ -52,10 +112,29 @@ class Order(BaseModel):
 
 class Position(BaseModel):
   ticker: str
-  position: int = Field(default=0, description="Positive = YES contracts, negative = NO contracts")
-  market_exposure: int = Field(default=0, description="Notional exposure in cents")
-  realized_pnl: int = Field(default=0, description="Realised P&L in cents")
+  # New API: fixed-point string; positive = YES held, negative = NO held
+  position_fp: str = "0"
+  market_exposure_fp: Optional[str] = None
+  realized_pnl_fp: Optional[str] = None
   resting_orders_count: int = 0
+
+  @model_validator(mode="before")
+  @classmethod
+  def _accept_legacy_position(cls, data: Any) -> Any:
+    """Accept integer position= field and convert to position_fp."""
+    if not isinstance(data, dict):
+      return data
+    data = dict(data)  # don't mutate caller's dict
+    if "position" in data and "position_fp" not in data:
+      data["position_fp"] = str(data.pop("position"))
+    return data
+
+  @property
+  def position(self) -> int:
+    try:
+      return int(self.position_fp)
+    except (ValueError, TypeError):
+      return 0
 
   @property
   def yes_contracts(self) -> int:
@@ -67,8 +146,15 @@ class Position(BaseModel):
 
 
 class Portfolio(BaseModel):
-  balance: int = Field(description="Available cash in cents")
+  balance_dollars: Optional[str] = None
+  balance: int = 0  # cents, populated from balance_dollars if present
   positions: list[Position] = Field(default_factory=list)
+
+  @model_validator(mode="after")
+  def _parse_balance(self) -> "Portfolio":
+    if self.balance_dollars is not None and self.balance == 0:
+      self.balance = _dollars_to_cents(self.balance_dollars)
+    return self
 
   @property
   def available_balance_usd(self) -> float:

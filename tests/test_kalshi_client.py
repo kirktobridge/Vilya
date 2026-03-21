@@ -15,7 +15,7 @@ from src.kalshi_client.endpoints import (
 )
 from src.kalshi_client.models import Market, Order, OrderBook, Portfolio, Position
 
-KALSHI_BASE = "https://trading-api.kalshi.com/trade-api/v2"
+KALSHI_BASE = "https://api.elections.kalshi.com/trade-api/v2"
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -49,7 +49,7 @@ ORDER_PAYLOAD = {
 
 
 def _make_client() -> KalshiClient:
-  return KalshiClient(api_key="test-key", base_url=KALSHI_BASE)
+  return KalshiClient(api_key="test-key", base_url=KALSHI_BASE, private_key_path="")
 
 
 # ---------------------------------------------------------------------------
@@ -92,16 +92,16 @@ class TestKalshiClientHTTP:
 
   @resp_lib.activate
   def test_post_sends_json_body(self) -> None:
-    resp_lib.add(resp_lib.POST, f"{KALSHI_BASE}/orders", json={"order": ORDER_PAYLOAD})
-    _make_client().post("/orders", json={"ticker": "X", "count": 1})
+    resp_lib.add(resp_lib.POST, f"{KALSHI_BASE}/portfolio/orders", json={"order": ORDER_PAYLOAD})
+    _make_client().post("/portfolio/orders", json={"ticker": "X", "count": 1})
     import json
     body = json.loads(resp_lib.calls[0].request.body)
     assert body["ticker"] == "X"
 
   @resp_lib.activate
   def test_delete_returns_response(self) -> None:
-    resp_lib.add(resp_lib.DELETE, f"{KALSHI_BASE}/orders/ord_abc123", json={"ok": True})
-    result = _make_client().delete("/orders/ord_abc123")
+    resp_lib.add(resp_lib.DELETE, f"{KALSHI_BASE}/portfolio/orders/ord_abc123", json={"ok": True})
+    result = _make_client().delete("/portfolio/orders/ord_abc123")
     assert result == {"ok": True}
 
 
@@ -235,7 +235,7 @@ class TestPlaceOrder:
   @resp_lib.activate
   def test_returns_order_object(self) -> None:
     resp_lib.add(
-      resp_lib.POST, f"{KALSHI_BASE}/orders", json={"order": ORDER_PAYLOAD}
+      resp_lib.POST, f"{KALSHI_BASE}/portfolio/orders", json={"order": ORDER_PAYLOAD}
     )
     order = place_order(_make_client(), "KXHIGHNY-24JUL04-T85", "yes", 3, 44)
     assert order.order_id == "ord_abc123"
@@ -243,26 +243,26 @@ class TestPlaceOrder:
 
   @resp_lib.activate
   def test_yes_side_sets_correct_prices(self) -> None:
-    resp_lib.add(resp_lib.POST, f"{KALSHI_BASE}/orders", json={"order": ORDER_PAYLOAD})
+    resp_lib.add(resp_lib.POST, f"{KALSHI_BASE}/portfolio/orders", json={"order": ORDER_PAYLOAD})
     import json
     place_order(_make_client(), "KXHIGHNY-24JUL04-T85", "yes", 3, 44)
     body = json.loads(resp_lib.calls[0].request.body)
-    assert body["yes_price"] == 44
-    assert body["no_price"] == 56  # 100 - 44
+    assert body["yes_price_dollars"] == "0.4400"
+    assert body["no_price_dollars"] == "0.5600"  # 100 - 44 = 56 cents
 
   @resp_lib.activate
   def test_no_side_sets_correct_prices(self) -> None:
     no_order = {**ORDER_PAYLOAD, "side": "no", "yes_price": 44, "no_price": 56}
-    resp_lib.add(resp_lib.POST, f"{KALSHI_BASE}/orders", json={"order": no_order})
+    resp_lib.add(resp_lib.POST, f"{KALSHI_BASE}/portfolio/orders", json={"order": no_order})
     import json
     place_order(_make_client(), "KXHIGHNY-24JUL04-T85", "no", 3, 56)
     body = json.loads(resp_lib.calls[0].request.body)
-    assert body["no_price"] == 56
-    assert body["yes_price"] == 44  # 100 - 56
+    assert body["no_price_dollars"] == "0.5600"
+    assert body["yes_price_dollars"] == "0.4400"  # 100 - 56 = 44 cents
 
   @resp_lib.activate
   def test_order_type_is_always_limit(self) -> None:
-    resp_lib.add(resp_lib.POST, f"{KALSHI_BASE}/orders", json={"order": ORDER_PAYLOAD})
+    resp_lib.add(resp_lib.POST, f"{KALSHI_BASE}/portfolio/orders", json={"order": ORDER_PAYLOAD})
     import json
     place_order(_make_client(), "KXHIGHNY-24JUL04-T85", "yes", 3, 44)
     body = json.loads(resp_lib.calls[0].request.body)
@@ -272,14 +272,14 @@ class TestPlaceOrder:
 class TestCancelOrder:
   @resp_lib.activate
   def test_sends_delete_to_correct_url(self) -> None:
-    resp_lib.add(resp_lib.DELETE, f"{KALSHI_BASE}/orders/ord_abc123", json={})
+    resp_lib.add(resp_lib.DELETE, f"{KALSHI_BASE}/portfolio/orders/ord_abc123", json={})
     cancel_order(_make_client(), "ord_abc123")
     assert resp_lib.calls[0].request.method == "DELETE"
-    assert "/orders/ord_abc123" in resp_lib.calls[0].request.url
+    assert "/portfolio/orders/ord_abc123" in resp_lib.calls[0].request.url
 
   @resp_lib.activate
   def test_returns_none(self) -> None:
-    resp_lib.add(resp_lib.DELETE, f"{KALSHI_BASE}/orders/ord_abc123", json={})
+    resp_lib.add(resp_lib.DELETE, f"{KALSHI_BASE}/portfolio/orders/ord_abc123", json={})
     result = cancel_order(_make_client(), "ord_abc123")
     assert result is None
 
@@ -289,7 +289,7 @@ class TestGetOpenOrders:
   def test_returns_order_list(self) -> None:
     resp_lib.add(
       resp_lib.GET,
-      f"{KALSHI_BASE}/orders",
+      f"{KALSHI_BASE}/portfolio/orders",
       json={"orders": [ORDER_PAYLOAD]},
     )
     orders = get_open_orders(_make_client())
@@ -298,11 +298,11 @@ class TestGetOpenOrders:
 
   @resp_lib.activate
   def test_status_resting_query_param(self) -> None:
-    resp_lib.add(resp_lib.GET, f"{KALSHI_BASE}/orders", json={"orders": []})
+    resp_lib.add(resp_lib.GET, f"{KALSHI_BASE}/portfolio/orders", json={"orders": []})
     get_open_orders(_make_client())
     assert "status=resting" in resp_lib.calls[0].request.url
 
   @resp_lib.activate
   def test_empty_orders(self) -> None:
-    resp_lib.add(resp_lib.GET, f"{KALSHI_BASE}/orders", json={"orders": []})
+    resp_lib.add(resp_lib.GET, f"{KALSHI_BASE}/portfolio/orders", json={"orders": []})
     assert get_open_orders(_make_client()) == []

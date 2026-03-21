@@ -24,8 +24,17 @@ def get_portfolio(client: KalshiClient) -> Portfolio:
   """Return current balance and open positions (two API calls)."""
   balance_data = client.get("/portfolio/balance")
   positions_data = client.get("/portfolio/positions")
-  positions = [Position.model_validate(p) for p in positions_data.get("positions", [])]
-  return Portfolio(balance=balance_data.get("balance", 0), positions=positions)
+  # New API uses "market_positions"; old API used "positions"
+  raw_positions = positions_data.get("market_positions") or positions_data.get("positions", [])
+  positions = [Position.model_validate(p) for p in raw_positions]
+  # New API returns balance_dollars; fall back to balance (cents) if present
+  balance_dollars = balance_data.get("balance_dollars")
+  balance_cents = balance_data.get("balance", 0)
+  return Portfolio(
+    balance_dollars=balance_dollars,
+    balance=int(balance_cents) if balance_dollars is None else 0,
+    positions=positions,
+  )
 
 
 def place_order(
@@ -36,25 +45,27 @@ def place_order(
   price: int,
 ) -> Order:
   """Submit a limit buy order. price is in cents (0-100)."""
+  yes_cents = price if side == "yes" else 100 - price
+  no_cents = price if side == "no" else 100 - price
   payload: dict[str, object] = {
     "ticker": ticker,
     "side": side,
     "type": "limit",
     "action": "buy",
     "count": count,
-    "yes_price": price if side == "yes" else 100 - price,
-    "no_price": price if side == "no" else 100 - price,
+    "yes_price_dollars": f"{yes_cents / 100:.4f}",
+    "no_price_dollars": f"{no_cents / 100:.4f}",
   }
-  data = client.post("/orders", json=payload)
+  data = client.post("/portfolio/orders", json=payload)
   return Order.model_validate(data["order"])
 
 
 def cancel_order(client: KalshiClient, order_id: str) -> None:
   """Cancel an open order by ID."""
-  client.delete(f"/orders/{order_id}")
+  client.delete(f"/portfolio/orders/{order_id}")
 
 
 def get_open_orders(client: KalshiClient) -> list[Order]:
   """Return all resting (open) orders."""
-  data = client.get("/orders", params={"status": "resting"})
+  data = client.get("/portfolio/orders", params={"status": "resting"})
   return [Order.model_validate(o) for o in data.get("orders", [])]

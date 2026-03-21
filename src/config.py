@@ -34,7 +34,8 @@ class Settings(BaseSettings):
   poll_interval_seconds: int = Field(default=600, description="Daemon poll interval")
 
   # Kalshi API
-  kalshi_base_url: str = Field(default="https://trading-api.kalshi.com/trade-api/v2")
+  kalshi_base_url: str = Field(default="https://api.elections.kalshi.com/trade-api/v2")
+  kalshi_private_key_path: str = Field(default="", description="Path to RSA private key PEM for request signing")
   kalshi_series_ticker: str = Field(default="KXHIGHNY")
 
   # Model artifacts
